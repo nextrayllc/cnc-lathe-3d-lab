@@ -1,0 +1,690 @@
+<title>CNC旋盤 3Dラボ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 工作機械の操作盤 — 左に3Dステージ、右にNCプログラム、下に操作ボタンと稼働データ */
+:root{
+  --bg:#0f1317; --panel:#161c22; --panel-2:#1d252d; --line:#2a353f;
+  --fg:#e3e8ec; --muted:#8b98a5; --accent:#f0b400; --accent-ink:#1b1500;
+  --run:#35c972; --hold:#f0b400; --stop:#ff5b4e; --cool:#62c6ff;
+  --f-display:"Chakra Petch","Noto Sans JP",system-ui,sans-serif;
+  --f-body:"Noto Sans JP",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.6}
+.wrap{max-width:1380px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px;display:grid;gap:14px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 24px}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(26px,4vw,40px);line-height:1.1;margin:2px 0 0;letter-spacing:.01em;text-wrap:balance}
+.lede{color:var(--muted);margin:0;max-width:62ch}
+.console{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
+@media (max-width:920px){.console{grid-template-columns:minmax(0,1fr)}}
+.stage{position:relative;height:clamp(360px,64vh,660px);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0b0f12;touch-action:none;min-width:0}
+.stage canvas{display:block;width:100%;height:100%}
+.dro{position:absolute;top:10px;left:10px;background:rgba(10,14,18,.8);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-family:var(--f-mono);font-variant-numeric:tabular-nums;display:grid;grid-template-columns:auto auto;gap:0 14px;font-size:13px;pointer-events:none;line-height:1.55}
+.dro span{color:var(--muted)}
+.dro b{color:#fff;font-weight:600;text-align:right;min-width:9ch}
+.dro b.hl{color:var(--accent)}
+.status{position:absolute;top:10px;right:10px;font-family:var(--f-display);font-weight:700;letter-spacing:.12em;font-size:13px;padding:5px 12px;border-radius:999px;background:rgba(10,14,18,.8);border:1px solid var(--line);display:flex;align-items:center;gap:8px;pointer-events:none}
+.status i{width:9px;height:9px;border-radius:50%;background:var(--muted);display:block}
+.status[data-s="run"] i{background:var(--run);box-shadow:0 0 10px var(--run)}
+.status[data-s="hold"] i{background:var(--hold);box-shadow:0 0 10px var(--hold);animation:blink .6s steps(2) infinite}
+.status[data-s="idle"] i{background:var(--stop)}
+@keyframes blink{50%{opacity:.2}}
+.cams{position:absolute;left:10px;bottom:10px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100% - 20px)}
+.cams button{font-family:var(--f-body);font-size:12px;background:rgba(10,14,18,.82);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+.cams button[aria-pressed="true"]{border-color:var(--accent);color:#ffe7a1}
+.hint{position:absolute;right:12px;bottom:12px;color:var(--muted);font-size:11px;pointer-events:none}
+@media (max-width:620px){.hint{display:none}.dro{font-size:11px;padding:6px 9px}}
+.tip{position:absolute;pointer-events:none;background:#0b0f12;border:1px solid var(--accent);border-radius:6px;padding:6px 10px;font-size:12px;max-width:240px;transform:translate(12px,12px);line-height:1.5}
+.tip strong{display:block;font-family:var(--f-display);color:var(--accent);letter-spacing:.03em}
+.side{display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;height:clamp(360px,64vh,660px);min-width:0}
+@media (max-width:920px){.side{height:auto;grid-template-rows:auto 300px}}
+.progs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.progs button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 6px 5px;color:var(--fg);cursor:pointer;display:grid;gap:2px;justify-items:center;font-size:11.5px;min-width:0}
+.progs button canvas{width:100%;height:34px;display:block}
+.progs button[aria-pressed="true"]{border-color:var(--accent);background:var(--panel-2)}
+.progs small{font-family:var(--f-mono);color:var(--muted);font-size:10px}
+.gwrap{display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:0;overflow:hidden}
+.ghead{display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+.ghead b{color:var(--accent);font-weight:600}
+.gcode{overflow:auto;font-family:var(--f-mono);font-size:12px;padding:6px 0;position:relative}
+.gl{display:grid;grid-template-columns:50px auto;padding:0 10px;white-space:pre;color:#b9c4cd;line-height:1.7}
+.gl .n{color:#55626e}
+.gl .c{color:#7d8c99}
+.gl.done{color:#5f6b76}
+.gl.cur{background:rgba(240,180,0,.15);color:#fff;box-shadow:inset 3px 0 0 var(--accent)}
+.ops{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.btn{font-family:var(--f-display);font-weight:600;letter-spacing:.04em;border:1px solid var(--line);background:var(--panel-2);color:var(--fg);border-radius:8px;padding:8px 14px;cursor:pointer;min-height:40px;font-size:13.5px}
+.btn:focus-visible,.cams button:focus-visible,.progs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.start{background:var(--run);color:#06210f;border-color:transparent}
+.btn.hold{background:var(--hold);color:var(--accent-ink);border-color:transparent}
+.btn.reset{background:transparent;color:var(--stop);border-color:rgba(255,91,78,.5)}
+.tog[aria-pressed="true"]{background:rgba(240,180,0,.15);border-color:var(--accent);color:#ffe7a1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg .btn{border:0;border-radius:0;min-height:38px;padding:8px 12px}
+.seg .btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.sep{width:1px;align-self:stretch;background:var(--line)}
+.rng{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.rng input{accent-color:var(--accent);width:120px}
+.rng output{font-family:var(--f-mono);color:var(--fg);min-width:4ch;font-variant-numeric:tabular-nums}
+.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer}
+.chk input{accent-color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:0}
+.stat .k{font-size:11.5px;color:var(--muted)}
+.stat .v{font-family:var(--f-display);font-weight:700;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat .v small{font-size:13px;color:var(--muted);font-weight:500;margin-left:3px}
+.stat.wide{grid-column:span 2}
+@media (max-width:420px){.stat.wide{grid-column:auto}}
+.stat canvas{width:100%;height:44px;display:block;margin-top:4px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 24px;padding:4px 2px;color:var(--muted);font-size:13px}
+.notes h2{grid-column:1/-1;font-family:var(--f-display);font-size:15px;color:var(--fg);margin:8px 0 0;letter-spacing:.04em}
+.notes p{margin:0}
+.notes b{color:var(--fg);font-weight:500}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Turning Center · 8-Station Turret · φ40 Bar</div>
+      <h1>CNC旋盤 3Dラボ</h1>
+    </div>
+    <p class="lede">NCプログラムをそのまま実行して、バー材がチャックから送り出され、荒削り・仕上げ・突切りを経て完成品になるまでを3Dで再現します。削った分だけワークの形が変わります。</p>
+  </header>
+
+  <div class="console">
+    <div class="stage" id="stage">
+      <div class="dro" aria-live="off">
+        <span>X</span><b id="dX">0.000</b>
+        <span>Z</span><b id="dZ">0.000</b>
+        <span>S</span><b id="dS" class="hl">0</b>
+        <span>F</span><b id="dF">0.00</b>
+        <span>T</span><b id="dT">T0101</b>
+      </div>
+      <div class="status" id="status" data-s="idle"><i></i><span id="statusTxt">IDLE</span></div>
+      <div class="cams" id="cams">
+        <button type="button" data-cam="overview" aria-pressed="true">全体</button>
+        <button type="button" data-cam="tool" aria-pressed="false">刃先追従</button>
+        <button type="button" data-cam="turret" aria-pressed="false">タレット</button>
+        <button type="button" data-cam="chuck" aria-pressed="false">チャック</button>
+        <button type="button" data-cam="cinema" aria-pressed="false">シネマ</button>
+      </div>
+      <div class="hint">ドラッグで回転 · ホイールでズーム · 部品にカーソルで解説</div>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+
+    <aside class="side">
+      <div class="progs" id="progs"></div>
+      <div class="gwrap">
+        <div class="ghead"><span>NC PROGRAM <b id="pcode">O1001</b></span><span id="pnote">Fanuc系 G コード</span></div>
+        <div class="gcode" id="gcode"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="ops">
+    <button type="button" class="btn start" id="bStart">サイクルスタート</button>
+    <button type="button" class="btn hold" id="bHold">フィードホールド</button>
+    <button type="button" class="btn reset" id="bReset">リセット</button>
+    <label class="chk"><input type="checkbox" id="auto" checked> 連続運転</label>
+    <span class="sep"></span>
+    <div class="seg" role="group" aria-label="シミュレーション速度">
+      <button type="button" class="btn" data-spd="1" aria-pressed="false">1×</button>
+      <button type="button" class="btn" data-spd="2" aria-pressed="true">2×</button>
+      <button type="button" class="btn" data-spd="4" aria-pressed="false">4×</button>
+    </div>
+    <label class="rng" for="ovr">主軸オーバーライド <input type="range" id="ovr" min="50" max="150" step="10" value="100"> <output id="ovrO">100%</output></label>
+    <span class="sep"></span>
+    <button type="button" class="btn tog" id="tSection" aria-pressed="false">断面表示</button>
+    <button type="button" class="btn tog" id="tExplode" aria-pressed="false">分解ビュー</button>
+    <button type="button" class="btn tog" id="tCoolant" aria-pressed="true">クーラント</button>
+    <button type="button" class="btn tog" id="tSound" aria-pressed="false">サウンド</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">生産数</div><div class="v" id="sParts">0<small>個</small></div></div>
+    <div class="stat"><div class="k">サイクルタイム（実機換算）</div><div class="v" id="sCycle">0.0<small>秒</small></div></div>
+    <div class="stat"><div class="k">前回サイクル</div><div class="v" id="sLast">—</div></div>
+    <div class="stat"><div class="k">切りくず排出量</div><div class="v" id="sChip">0<small>g</small></div></div>
+    <div class="stat wide"><div class="k">主軸負荷 <span id="sLoad">0%</span></div><canvas id="spark" width="600" height="88"></canvas></div>
+  </div>
+
+  <section class="notes">
+    <h2>触ってみるところ</h2>
+    <p><b>ワークの色</b>　黒皮のバー材が削られた部分だけ金属色になり、削った直後は熱で焼け色がつきます。材質はプログラムごとに鋼・真鍮・アルミが切り替わります。</p>
+    <p><b>タレット割り出し</b>　工具交換のたびにタレットがアンクランプ→回転→クランプします。荒バイト・仕上げバイト・突切りバイトを順に使います。</p>
+    <p><b>断面表示</b>　ワークの手前半分をカットして、削り残しと仕上げ形状を断面で確認できます。</p>
+    <p><b>フィードホールド</b>　送りと一緒に切りくずとクーラントも空中で止まります。視点を回して観察できます。</p>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const stage=$('#stage');
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- 定数 ---------- */
+const DZ=0.5, L=100, N=Math.round(L/DZ)+1, R0=20, ZP=8, LE=99, GRIP=25, REACH=130;
+const HOME={z:170,r:70};
+const MATS={
+  steel:{label:'S45C',cut:[.80,.82,.85],bar:[.27,.25,.24],heat:[1,.6,.22],chip:[.62,.64,.70],dens:7.85,sparks:true},
+  brass:{label:'C3604',cut:[.96,.78,.40],bar:[.50,.38,.18],heat:[1,.88,.55],chip:[.92,.74,.36],dens:8.5,sparks:false},
+  alu:{label:'A5056',cut:[.90,.92,.95],bar:[.58,.60,.63],heat:[1,.96,.9],chip:[.86,.88,.92],dens:2.7,sparks:false}
+};
+const TOOLS=[
+  {code:'T0101',name:'荒バイト CNMG120408',nose:.8,kind:'rough'},
+  {code:'T0202',name:'仕上げ VNMG160404',nose:.4,kind:'finish'},
+  {code:'T0303',name:'突切り 幅3mm',nose:1.5,kind:'part'},
+  {code:'T0404',name:'センタドリル',kind:'drill'},
+  {code:'T0505',name:'ねじ切りバイト',kind:'thread'},
+  {code:'T0606',name:'ボーリングバー',kind:'bore'},
+  {code:'T0707',name:'溝入れバイト',kind:'groove'},
+  {code:'T0808',name:'ドリル φ10',kind:'drill2'}
+];
+
+function linear(keys){return z=>{if(z<=keys[0][0])return keys[0][1];for(let k=0;k<keys.length-1;k++){const a=keys[k],b=keys[k+1];if(z<=b[0]){const t=(z-a[0])/(b[0]-a[0]||1);return a[1]+(b[1]-a[1])*t;}}return keys[keys.length-1][1];};}
+function smooth(keys){return z=>{if(z<=keys[0][0])return keys[0][1];for(let k=0;k<keys.length-1;k++){const a=keys[k],b=keys[k+1];if(z<=b[0]){const p0=keys[Math.max(0,k-1)][1],p3=keys[Math.min(keys.length-1,k+2)][1],v1=a[1],v2=b[1];const t=(z-a[0])/(b[0]-a[0]),t2=t*t,t3=t2*t;return .5*((2*v1)+(-p0+v2)*t+(2*p0-5*v1+4*v2-p3)*t2+(-p0+3*v1-3*v2+p3)*t3);}}return keys[keys.length-1][1];};}
+const pawnBase=smooth([[ZP,18],[15,18],[16,16.5],[18,16.5],[20,13.5],[25,12],[33,9.6],[42,8],[50,7.2],[55,7.6],[57,11.5],[59.5,11.5],[61.5,7.4],[66,6.2],[79,6.2]]);
+const PROGRAMS=[
+  {id:'shaft',code:'O1001',name:'段付きシャフト',mat:'steel',f:linear([[ZP,17],[34,17],[36,14],[50,14],[50.6,11],[54.4,11],[55,14],[64,14],[65.5,10],[86,10],[87.5,7],[LE-1.5,7],[LE,5.5]])},
+  {id:'pawn',code:'O1002',name:'チェスのポーン',mat:'brass',f:z=>{if(z>=79){const d=z-(LE-11.2),s=11.2*11.2-d*d;return s>0?Math.sqrt(s):0;}return pawnBase(z);}},
+  {id:'pin',code:'O1003',name:'ボウリングピン',mat:'alu',f:smooth([[ZP,10.5],[14,11.5],[24,15.5],[36,18],[47,16.5],[58,11],[66,7.6],[72,7.4],[79,9.2],[87,10],[93,8.8],[97,5.5],[LE,1]])}
+];
+
+/* ---------- NCプログラム生成 ---------- */
+function fmt(v){let s=(Math.round(v*1000)/1000).toFixed(3).replace(/0+$/,'');return s==='-0.'?'0.':s;}
+function buildProgram(P){
+  const f=z=>Math.min(R0-.6,Math.max(0,P.f(z)));
+  const ins=[],lines=[];let n=0,lx=null,lz=null,lg=null,lF=null;
+  const raw=t=>lines.push({n:'',t});
+  const blk=(t,o)=>{n+=10;lines.push({n:'N'+String(n).padStart(4,'0'),t});if(o){o.line=lines.length-1;ins.push(o);}};
+  const mv=(z,r,rapid,mode,F)=>{const g=rapid?'G00':'G01';const xs='X'+fmt(2*r),zs='Z'+fmt(z);let t='';if(xs!==lx)t+=xs+' ';if(zs!==lz)t+=zs+' ';if(!t)return;if(!rapid&&F!==lF){t+='F'+F+' ';lF=F;}if(g!==lg)t=g+' '+t;lg=g;lx=xs;lz=zs;blk(t.trim(),{op:'move',z,r,rapid,mode:mode||'turn',F:F||0});};
+  const compress=pts=>pts.filter((p,i)=>i===0||i===pts.length-1||Math.abs(p[1]-pts[i-1][1])>1e-3||Math.abs(p[1]-pts[i+1][1])>1e-3);
+  raw('%');raw(`${P.code} (${P.name} / ${MATS[P.mat].label} φ40)`);
+  blk('G21 G18 G40 G99 (mm・ZX平面・毎回転送り)');
+  blk('M45 (バーフィード)',{op:'bar'});
+  blk('M81 (ドア閉)',{op:'door',v:0});
+  mv(HOME.z,HOME.r,true);
+  blk('T0101 (荒バイト CNMG120408)',{op:'tool',t:0});
+  blk('G97 S1800 M03',{op:'spindle',rpm:1800});
+  blk('M08 (クーラント ON)',{op:'coolant',v:true});
+  raw('(--- 端面 ---)');
+  mv(LE+.8,R0+2,true);mv(LE+.8,-.8,false,'face',.2);mv(LE+3,-.8,true);mv(LE+3,R0+1,true);
+  blk('M31 (心押し前進)',{op:'tail',v:1});
+  raw('(--- 外径荒削り ---)');
+  let minT=99;for(let z=ZP+3;z<=LE;z+=.5)minT=Math.min(minT,f(z));
+  for(let rd=R0-2;rd>minT+.4;rd-=2){
+    mv(LE+1,rd,true);
+    const pts=[];for(let z=LE+1;z>=ZP+3-1e-6;z-=1){pts.push([z,z>LE?rd:Math.max(rd,f(z)+.5)]);}
+    compress(pts).forEach(p=>mv(p[0],p[1],false,'turn',.25));
+    mv(ZP+3,R0+1,true);mv(LE+1,R0+1,true);
+  }
+  blk('M32 (心押し後退)',{op:'tail',v:0});
+  mv(HOME.z,HOME.r,true);
+  blk('T0202 (仕上げ VNMG160404)',{op:'tool',t:1});
+  blk('G97 S2400 M03',{op:'spindle',rpm:2400});
+  raw('(--- 外径仕上げ ---)');
+  mv(LE+1,R0+1,true);mv(LE+1,f(LE),true);
+  {const pts=[];for(let z=LE;z>=ZP+1.5-1e-6;z-=1)pts.push([z,f(z)]);compress(pts).forEach(p=>mv(p[0],p[1],false,'turn',.1));}
+  mv(ZP+1.5,R0+2,true);mv(HOME.z,HOME.r,true);
+  blk('T0303 (突切り 幅3mm)',{op:'tool',t:2});
+  blk('G97 S1200 M03',{op:'spindle',rpm:1200});
+  raw('(--- 突切り ---)');
+  mv(ZP,R0+2,true);mv(ZP,.6,false,'part',.06);
+  blk('(部品分離)',{op:'partoff'});
+  mv(ZP,R0+2,true);mv(HOME.z,HOME.r,true);
+  blk('M09 (クーラント OFF)',{op:'coolant',v:false});
+  blk('M05 (主軸停止)',{op:'spindle',rpm:0});
+  blk('M80 (ドア開)',{op:'door',v:1});
+  blk('M73 (パーツキャッチャ排出)',{op:'eject'});
+  blk('M30',{op:'end'});
+  raw('%');
+  return {ins,lines,P};
+}
+
+/* ---------- レンダラ ---------- */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.localClippingEnabled=true;
+stage.prepend(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b0f12);
+scene.fog=new THREE.Fog(0x0b0f12,1300,2600);
+const camera=new THREE.PerspectiveCamera(38,1,1,6000);
+camera.position.set(420,330,820);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.target.set(70,-20,0);controls.enableDamping=true;controls.minDistance=90;controls.maxDistance=1500;controls.maxPolarAngle=Math.PI*.55;
+
+// 簡易環境マップ（金属の映り込み用）
+{const pm=new THREE.PMREMGenerator(renderer);const es=new THREE.Scene();
+ es.add(new THREE.Mesh(new THREE.BoxGeometry(100,100,100),new THREE.MeshBasicMaterial({color:0x2c333a,side:THREE.BackSide})));
+ const el=(w,h,d,x,y,z,c)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshBasicMaterial({color:c}));m.position.set(x,y,z);es.add(m);};
+ el(70,2,24,0,47,0,0xffffff);el(2,30,60,-48,10,0,0xa9c2da);el(2,24,40,48,0,10,0xffe0b0);el(80,16,2,0,-12,-48,0x56616c);el(30,8,2,0,20,48,0xffffff);
+ scene.environment=pm.fromScene(es,.04).texture;}
+
+scene.add(new THREE.HemisphereLight(0xcfe0ff,0x161b20,.35));
+const key=new THREE.DirectionalLight(0xffffff,.95);key.position.set(260,620,420);key.castShadow=true;key.shadow.mapSize.set(2048,2048);
+Object.assign(key.shadow.camera,{left:-520,right:620,top:420,bottom:-420,near:50,far:1600});key.shadow.bias=-.0006;scene.add(key);
+const rim=new THREE.DirectionalLight(0x8fb0ff,.35);rim.position.set(-500,200,-300);scene.add(rim);
+const workLight=new THREE.PointLight(0xfff0d0,.9,700,1.6);workLight.position.set(60,170,40);scene.add(workLight);
+
+const M={
+  paint:new THREE.MeshStandardMaterial({color:0xaeb5bb,roughness:.6,metalness:.1}),
+  paintDark:new THREE.MeshStandardMaterial({color:0x2a3138,roughness:.65,metalness:.2}),
+  accent:new THREE.MeshStandardMaterial({color:0xf0b400,roughness:.45,metalness:.15}),
+  steel:new THREE.MeshStandardMaterial({color:0xb0b8c0,roughness:.28,metalness:.9}),
+  steelDark:new THREE.MeshStandardMaterial({color:0x5d666f,roughness:.38,metalness:.85}),
+  gold:new THREE.MeshStandardMaterial({color:0xe0b23a,roughness:.25,metalness:.9}),
+  insert:new THREE.MeshStandardMaterial({color:0x34383d,roughness:.3,metalness:.7}),
+  glass:new THREE.MeshStandardMaterial({color:0xa8d8ff,transparent:true,opacity:.12,roughness:.05,metalness:.1,depthWrite:false}),
+  black:new THREE.MeshStandardMaterial({color:0x111418,roughness:.85})
+};
+function mesh(g,m,parent,x=0,y=0,z=0){const o=new THREE.Mesh(g,m);o.position.set(x,y,z);o.castShadow=o.receiveShadow=true;(parent||scene).add(o);return o;}
+function box(w,h,d,m,parent,x,y,z){return mesh(new THREE.BoxGeometry(w,h,d),m,parent,x,y,z);}
+function cylX(r1,r2,len,m,parent,x,y,z,seg=48){const g=new THREE.CylinderGeometry(r1,r2,len,seg);g.rotateZ(-Math.PI/2);return mesh(g,m,parent,x,y,z);}
+const labelRoots=[];
+function label(o,name,desc){o.userData.label={name,desc};labelRoots.push(o);return o;}
+const explodeParts=[];
+function explodable(o,off){explodeParts.push({o,base:o.position.clone(),off:new THREE.Vector3(...off)});return o;}
+
+/* ---------- 床・ベッド ---------- */
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(4000,4000),new THREE.MeshStandardMaterial({color:0x13181d,roughness:.95}));
+floor.rotation.x=-Math.PI/2;floor.position.y=-260;floor.receiveShadow=true;scene.add(floor);
+const grid=new THREE.GridHelper(4000,80,0x26313b,0x1a2128);grid.position.y=-259;scene.add(grid);
+
+const bedG=explodable(new THREE.Group(),[0,-150,0]);scene.add(bedG);
+label(box(860,110,400,M.paintDark,bedG,130,-195,-30),'ベッド','鋳物製ベッド。重量で切削の振動を吸収し、刃物台と心押し台のレールを支えます。');
+box(860,8,16,M.steel,bedG,130,-136,-160);box(860,8,16,M.steel,bedG,130,-136,-80);
+box(560,8,16,M.steel,bedG,330,-136,40);box(560,8,16,M.steel,bedG,330,-136,100);
+box(860,26,6,M.accent,bedG,130,-160,171);
+const tray=new THREE.Group();bedG.add(tray);
+box(280,4,170,M.steelDark,tray,100,-134,10);box(280,24,4,M.steelDark,tray,100,-122,95);box(280,24,4,M.steelDark,tray,100,-122,-75);
+label(tray,'チップトレイ','落ちた切りくずを受けてチップコンベアへ送ります。削るほど山が育ちます。');
+
+/* ---------- 背面パネル・シグナルタワー ---------- */
+const wall=explodable(new THREE.Group(),[0,0,-180]);scene.add(wall);
+box(900,430,10,M.paintDark,wall,130,20,-330);
+const strip=box(860,6,4,new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xfff3d6,emissiveIntensity:1.2}),wall,130,226,-322);strip.castShadow=false;
+const tower=explodable(new THREE.Group(),[0,160,0]);tower.position.set(-240,110,70);scene.add(tower);
+mesh(new THREE.CylinderGeometry(4,4,60,12),M.steel,tower,0,30,0);
+const lampMats=[0xff4a3d,0xffb400,0x33d17a].map(c=>new THREE.MeshStandardMaterial({color:0x222,emissive:c,emissiveIntensity:.08,roughness:.3,transparent:true,opacity:.95}));
+lampMats.forEach((m,i)=>mesh(new THREE.CylinderGeometry(11,11,20,24),m,tower,0,72+i*21,0));
+mesh(new THREE.CylinderGeometry(12,12,5,24),M.black,tower,0,135,0);
+label(tower,'シグナルタワー','緑＝自動運転中、黄＝停止・フィードホールド、赤＝リセット待ち。工場の離れた場所からも状態が分かります。');
+
+/* ---------- 主軸台・チャック ---------- */
+const head=explodable(new THREE.Group(),[-240,0,0]);scene.add(head);
+const hsBody=label(box(220,260,240,M.paint,head,-150,-20,-20),'主軸台','主軸モータとスピンドルを収めるユニット。最高回転数 4,000 min⁻¹、ビルトインモータで直接回します。');
+box(222,18,242,M.accent,head,-150,70,-20);
+cylX(80,80,20,M.paint,head,-35,0,0);
+const spindle=new THREE.Group();spindle.position.set(-80,0,0);head.add(spindle);
+const chuckBody=cylX(85,85,50,M.steelDark,spindle,25,0,0,64);
+cylX(78,85,4,M.steel,spindle,51,0,0,64);
+for(let k=0;k<6;k++){const a=k/6*Math.PI*2+.3;cylX(4.5,4.5,3,M.black,spindle,53,Math.sin(a)*62,Math.cos(a)*62,12);}
+const jaws=[];
+for(let k=0;k<3;k++){const g=new THREE.Group();g.position.x=65;g.rotation.x=k/3*Math.PI*2;spindle.add(g);
+  box(18,4,58,M.black,g,-12,0,0).position.set(-13,40,0);
+  const j=box(30,24,20,M.steel,g,0,R0+12,0);box(30,6,22,M.accent,j,0,10,0);jaws.push(j);}
+label(spindle,'油圧3爪チャック','3つの爪が同時に動いてバー材を芯出し・把持します。バーフィード時に爪が開閉します。');
+
+/* ---------- ワーク ---------- */
+const prof=new Float32Array(N).fill(R0), heat=new Float32Array(N);
+const SEG=64,PP=N+3;
+const pts0=[new THREE.Vector2(0,-GRIP-80),new THREE.Vector2(R0,-GRIP-80)];for(let i=0;i<N;i++)pts0.push(new THREE.Vector2(R0,i*DZ));pts0.push(new THREE.Vector2(0,L));
+const wpGeo=new THREE.LatheGeometry(pts0,SEG);
+wpGeo.setAttribute('color',new THREE.BufferAttribute(new Float32Array(wpGeo.attributes.position.count*3),3));
+const SIN=[],COS=[];for(let i=0;i<=SEG;i++){const p=i/SEG*Math.PI*2;SIN[i]=Math.sin(p);COS[i]=Math.cos(p);}
+const streak=(()=>{const c=document.createElement('canvas');c.width=512;c.height=64;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,512,64);
+  for(let i=0;i<40;i++){x.fillStyle=`rgba(0,0,0,${Math.random()*.16})`;x.fillRect(Math.random()*512,0,2+Math.random()*16,64);}
+  x.fillStyle='rgba(0,0,0,.35)';x.fillRect(40,0,10,64);const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;t.wrapS=THREE.RepeatWrapping;return t;})();
+const clipPlane=new THREE.Plane(new THREE.Vector3(0,0,-1),0);
+const wpMat=new THREE.MeshStandardMaterial({vertexColors:true,map:streak,metalness:.75,roughness:.3,side:THREE.DoubleSide});
+const wp=new THREE.Mesh(wpGeo,wpMat);wp.rotation.z=-Math.PI/2;wp.castShadow=true;wp.receiveShadow=true;
+const wpHolder=new THREE.Group();wpHolder.position.x=80;spindle.add(wpHolder);wpHolder.add(wp);
+label(wp,'ワーク（バー材 φ40）','黒皮の丸棒。削った所だけ金属色になり、直後は切削熱で焼け色が出ます。');
+let wpDirty=true;
+const rad=new Float32Array(PP);
+function updateWP(){
+  const m=MATS[prog.P.mat];
+  rad[0]=0;rad[1]=R0;for(let i=0;i<N;i++)rad[i+2]=prof[i];rad[PP-1]=0;
+  const pos=wpGeo.attributes.position.array,col=wpGeo.attributes.color.array;
+  const cr=new Float32Array(PP*3);
+  for(let j=0;j<PP;j++){const i=Math.min(N-1,Math.max(0,j-2));const isCut=j>=2&&prof[i]<R0-.02;const b=isCut?m.cut:m.bar;const h=j>=2?Math.min(1,heat[i])*.85:0;
+    for(let c=0;c<3;c++)cr[j*3+c]=b[c]+(m.heat[c]-b[c])*h;}
+  for(let s=0;s<=SEG;s++){const sn=SIN[s],cs=COS[s];for(let j=0;j<PP;j++){const k=(s*PP+j)*3;pos[k]=rad[j]*sn;pos[k+2]=rad[j]*cs;col[k]=cr[j*3];col[k+1]=cr[j*3+1];col[k+2]=cr[j*3+2];}}
+  wpGeo.attributes.position.needsUpdate=true;wpGeo.attributes.color.needsUpdate=true;wpGeo.computeVertexNormals();
+}
+
+/* ---------- 心押し台 ---------- */
+const tail=explodable(new THREE.Group(),[220,0,0]);scene.add(tail);
+const tailBody=new THREE.Group();tail.add(tailBody);
+label(box(110,150,150,M.paint,tailBody,0,-65,0),'心押し台','長いワークの先端をライブセンタで支えて、たわみとびびりを抑えます。荒削り中だけ前進します。');
+box(112,14,152,M.accent,tailBody,0,-10,0);
+const quill=new THREE.Group();tailBody.add(quill);
+cylX(22,22,120,M.steel,quill,-55,0,0);
+cylX(16,16,14,M.steelDark,quill,-122,0,0);
+cylX(14,0.1,26,M.steel,quill,-142,0,0);
+let tailV=0;
+
+/* ---------- タレット刃物台 ---------- */
+const turretOff=new THREE.Vector3(0,90,-170);let explodeV=0;
+const saddle=new THREE.Group();scene.add(saddle);
+label(box(180,22,240,M.paintDark,saddle,60,-126,-120),'往復台（Z軸）','ボールねじとサーボモータでタレットごと主軸方向へ動きます。');
+const turret=new THREE.Group();scene.add(turret);
+const turretBody=new THREE.Group();turret.add(turretBody);
+box(110,96,120,M.paint,turretBody,68,-78,0);box(112,10,122,M.accent,turretBody,68,-28,0);
+cylX(56,62,90,M.paint,turretBody,68,0,0);
+const disk=new THREE.Group();turretBody.add(disk);
+cylX(74,74,46,M.steelDark,disk,0,0,0,8);
+const toolMeshes=[];
+TOOLS.forEach((T,k)=>{const a=k/8*Math.PI*2;const g=new THREE.Group();g.rotation.x=-a;disk.add(g);
+  box(30,26,34,M.steel,g,0,0,88);
+  if(T.kind==='rough'){box(18,12,26,M.steelDark,g,0,0,114);const ins=box(11,4,11,M.gold,g,0,-2,130-7.8);ins.rotation.y=Math.PI/4;}
+  else if(T.kind==='finish'){box(14,10,24,M.steelDark,g,0,0,113);const ins=box(6,3,13,M.gold,g,0,-2,130-6.5);ins.rotation.y=.35;}
+  else if(T.kind==='part'){box(3,24,26,M.steel,g,0,0,117);box(3.2,6,4,M.gold,g,0,-6,128);}
+  else if(T.kind==='drill'||T.kind==='drill2'){const c=cylX(T.kind==='drill'?4:5,T.kind==='drill'?4:5,50,M.gold,g,30,0,95,16);}
+  else if(T.kind==='bore'){cylX(6,6,60,M.steel,g,30,0,100,16);}
+  else {box(10,10,30,M.steelDark,g,0,0,115);box(4,3,6,M.gold,g,0,-2,129);}
+  toolMeshes.push(g);});
+label(turret,'8ステーション タレット','工具を8本まで搭載。工具交換時はアンクランプ→最短方向に割り出し回転→クランプの順で動きます。');
+const nozzle=new THREE.Group();turretBody.add(nozzle);
+const nzPipe=mesh(new THREE.CylinderGeometry(3,3,70,10),M.accent,nozzle,24,34,58);nzPipe.rotation.x=.9;
+label(nozzle,'クーラントノズル','刃先に切削油をかけて冷却・潤滑し、切りくずを流します。');
+
+/* ---------- ドア・操作盤・完成品台 ---------- */
+const door=explodable(new THREE.Group(),[0,0,260]);scene.add(door);
+const doorInner=new THREE.Group();door.add(doorInner);
+const glass=new THREE.Mesh(new THREE.BoxGeometry(340,300,2),M.glass);glass.position.set(0,30,200);glass.raycast=()=>{};doorInner.add(glass);
+[[0,182,340,14],[0,-122,340,14]].forEach(b=>box(b[2],b[3],8,M.paint,doorInner,b[0],b[1],200));
+[[-170],[170]].forEach(b=>box(14,318,8,M.paint,doorInner,b[0],30,200));
+const handle=box(10,90,14,M.accent,doorInner,-150,40,210);
+label(handle,'安全ドア','M80/M81 で自動開閉。閉まっていないと主軸は回りません。');
+let doorV=1;
+const panel=explodable(new THREE.Group(),[-140,0,100]);panel.position.set(-440,30,40);panel.rotation.y=.9;scene.add(panel);
+box(150,200,20,M.paintDark,panel,0,0,0);
+const opCan=document.createElement('canvas');opCan.width=256;opCan.height=150;const opX=opCan.getContext('2d');const opTex=new THREE.CanvasTexture(opCan);opTex.encoding=THREE.sRGBEncoding;
+const scr=new THREE.Mesh(new THREE.PlaneGeometry(124,73),new THREE.MeshBasicMaterial({map:opTex,toneMapped:false}));scr.position.set(0,45,10.5);panel.add(scr);
+for(let r=0;r<3;r++)for(let c=0;c<5;c++)box(16,12,4,c===4&&r===2?M.accent:M.steelDark,panel,-48+c*24,-10-r*20,11);
+mesh(new THREE.CylinderGeometry(9,9,6,20),new THREE.MeshStandardMaterial({color:0x33d17a,emissive:0x1a7a40,emissiveIntensity:.6}),panel,-38,-78,12).rotation.x=Math.PI/2;
+mesh(new THREE.CylinderGeometry(12,12,8,20),new THREE.MeshStandardMaterial({color:0xff4a3d,emissive:0x7a1a12,emissiveIntensity:.5}),panel,38,-78,12).rotation.x=Math.PI/2;
+mesh(new THREE.CylinderGeometry(5,5,240,10),M.steel,panel,0,-200,0);
+label(panel,'操作盤','NC画面に主軸回転数と座標がリアルタイムで表示されます。');
+const table=new THREE.Group();scene.add(table);
+label(box(230,110,150,M.paintDark,table,470,-205,260),'完成品トレイ','パーツキャッチャから出てきた完成品が並びます。8個を超えると古い順に回収されます。');
+box(232,6,152,M.steel,table,470,-147,260);
+
+/* ---------- 粒子: 切りくず・クーラント・火花 ---------- */
+const CH=900;
+const chips=new THREE.InstancedMesh(new THREE.TorusGeometry(2.6,.55,4,10,Math.PI*1.6),new THREE.MeshStandardMaterial({metalness:.8,roughness:.35}),CH);
+chips.castShadow=true;chips.frustumCulled=false;scene.add(chips);
+const cP=new Float32Array(CH*3),cV=new Float32Array(CH*3),cR=new Float32Array(CH*3),cW=new Float32Array(CH*3),cS=new Uint8Array(CH),cA=new Float32Array(CH);
+const cCol=[];let chipIdx=0,restCount=0;
+const dummy=new THREE.Object3D(),tmpC=new THREE.Color();
+for(let i=0;i<CH;i++){dummy.scale.setScalar(0);dummy.updateMatrix();chips.setMatrixAt(i,dummy.matrix);chips.setColorAt(i,tmpC.setRGB(1,1,1));cCol.push([.6,.6,.6]);}
+function emitChip(x,y,z,m){const i=chipIdx;chipIdx=(chipIdx+1)%CH;if(cS[i]===2)restCount=Math.max(0,restCount-1);cS[i]=1;cA[i]=0;
+  cP[i*3]=x;cP[i*3+1]=y;cP[i*3+2]=z;cV[i*3]=(Math.random()-.5)*260;cV[i*3+1]=200+Math.random()*380;cV[i*3+2]=(Math.random()-.35)*420;
+  for(let k=0;k<3;k++){cR[i*3+k]=Math.random()*6;cW[i*3+k]=(Math.random()-.5)*30;}cCol[i]=m.chip;}
+function pointsSys(n,color,size,additive){const g=new THREE.BufferGeometry();const p=new Float32Array(n*3).fill(-9999);g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  const mt=new THREE.PointsMaterial({color,size,transparent:true,opacity:additive?1:.75,depthWrite:false,blending:additive?THREE.AdditiveBlending:THREE.NormalBlending});
+  const o=new THREE.Points(g,mt);o.frustumCulled=false;scene.add(o);return {o,p,v:new Float32Array(n*3),life:new Float32Array(n),n,idx:0};}
+const cool=pointsSys(700,0x7fd0ff,2.6,false);
+const spark=pointsSys(260,0xffa040,2.4,true);
+function emitPt(s,x,y,z,vx,vy,vz,life){const i=s.idx;s.idx=(s.idx+1)%s.n;s.p[i*3]=x;s.p[i*3+1]=y;s.p[i*3+2]=z;s.v[i*3]=vx;s.v[i*3+1]=vy;s.v[i*3+2]=vz;s.life[i]=life;}
+function stepPts(s,dt,g,floorY){for(let i=0;i<s.n;i++){if(s.life[i]<=0)continue;s.life[i]-=dt;s.v[i*3+1]-=g*dt;s.p[i*3]+=s.v[i*3]*dt;s.p[i*3+1]+=s.v[i*3+1]*dt;s.p[i*3+2]+=s.v[i*3+2]*dt;if(s.life[i]<=0||s.p[i*3+1]<floorY){s.life[i]=0;s.p[i*3+1]=-9999;}}s.o.geometry.attributes.position.needsUpdate=true;}
+
+/* ---------- 完成品 ---------- */
+const parts=[];let trayCount=0;
+function makePart(){
+  const m=MATS[prog.P.mat];const i0=Math.ceil((ZP+1.5)/DZ);let i1=N-1;while(i1>i0&&prof[i1]<.05)i1--;
+  const z0=i0*DZ,z1=i1*DZ,zc=(z0+z1)/2;const pts=[new THREE.Vector2(0,z0-zc)];let maxR=0;
+  for(let i=i0;i<=i1;i++){pts.push(new THREE.Vector2(prof[i],i*DZ-zc));maxR=Math.max(maxR,prof[i]);}pts.push(new THREE.Vector2(0,z1-zc));
+  const g=new THREE.LatheGeometry(pts,48);
+  const mt=new THREE.MeshStandardMaterial({color:new THREE.Color().setRGB(...m.cut).convertSRGBToLinear(),metalness:.8,roughness:.25,map:streak});
+  const pm=new THREE.Mesh(g,mt);pm.rotation.z=-Math.PI/2;pm.castShadow=true;
+  const h=new THREE.Group();h.add(pm);h.position.set(head.position.x+zc,0,0);h.rotation.x=spindle.rotation.x;scene.add(h);
+  label(pm,'完成品：'+prog.P.name,`材質 ${m.label}・全長 ${(z1-z0).toFixed(1)} mm・最大径 φ${(maxR*2).toFixed(1)}`);
+  parts.push({h,maxR,vy:0,vx:-20,spin:mc.rpm*.012,state:'fall'});
+  for(let i=Math.floor((ZP-1.5)/DZ);i<N;i++)prof[i]=0;wpDirty=true;
+}
+
+/* ---------- 機械状態・ランナー ---------- */
+const mc={z:HOME.z,r:HOME.r,tz:HOME.z,tr:HOME.r,moving:false,rapid:true,mode:'turn',F:0,rpm:0,rpmT:0,coolant:false,tool:0,phi:0,unclamp:0,jaw:0,wpOff:0,vel:0};
+let prog=buildProgram(PROGRAMS[0]),nextProg=null;
+let running=false,hold=false,runId=0,simTime=0,cycleStart=0,partsMade=0,lastCycle=null,chipMass=0,load=0,speedMul=2,override=1,coolantEnabled=true,curLine=-1;
+const waiters=[];
+const until=fn=>new Promise(res=>waiters.push({fn,res}));
+const ease=k=>k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+function tween(dur,f){const t0=simTime;return until(()=>{const k=Math.min(1,(simTime-t0)/dur);f(ease(k));return k>=1;});}
+const sleep=s=>{const t=simTime+s;return until(()=>simTime>=t);};
+
+function applyCut(z0,r0,z1,r1,mode){
+  const nose=TOOLS[mc.tool].nose||.5;const d=Math.hypot(z1-z0,r1-r0);const steps=Math.max(1,Math.ceil(d/.25));let rem=0;
+  for(let s=1;s<=steps;s++){const t=s/steps,Z=z0+(z1-z0)*t,R=Math.max(0,r0+(r1-r0)*t);
+    const lo=Math.max(0,Math.floor((Z-nose)/DZ)),hi=mode==='face'?N-1:Math.min(N-1,Math.ceil((Z+nose)/DZ));
+    for(let i=lo;i<=hi;i++){const dz=i*DZ-Z;let lim;
+      if(mode==='part'){if(Math.abs(dz)>nose)continue;lim=R;}
+      else if(Math.abs(dz)<=nose)lim=R+nose-Math.sqrt(nose*nose-dz*dz);else lim=R;
+      if(lim<prof[i]-1e-4){rem+=prof[i]*prof[i]-lim*lim;prof[i]=lim;heat[i]=1;}}}
+  if(rem>0)wpDirty=true;return rem*Math.PI*DZ;
+}
+let cutThisFrame=0;
+function updateMotion(sdt){
+  mc.vel=0;if(!mc.moving)return;
+  const dz=mc.tz-mc.z,dr=mc.tr-mc.r,d=Math.hypot(dz,dr);
+  const v=mc.rapid?520:Math.max(.5,mc.F*mc.rpm/60*4);const step=v*sdt;const z0=mc.z,r0=mc.r;
+  if(step>=d){mc.z=mc.tz;mc.r=mc.tr;mc.moving=false;}else{mc.z+=dz/d*step;mc.r+=dr/d*step;}
+  mc.vel=v;if(!mc.rapid)cutThisFrame+=applyCut(z0,r0,mc.z,mc.r,mc.mode);
+}
+function moveTo(o){mc.tz=o.z;mc.tr=o.r;mc.rapid=o.rapid;mc.mode=o.mode;mc.F=o.F;mc.moving=true;return until(()=>!mc.moving);}
+
+async function exec(o){
+  switch(o.op){
+    case'move':return moveTo(o);
+    case'bar':{
+      await tween(.35,k=>mc.jaw=k);
+      prof.fill(R0);heat.fill(0);const start=-(L-ZP+1.5);mc.wpOff=start;wpDirty=true;
+      await tween(1.1,k=>mc.wpOff=start*(1-k));
+      return tween(.35,k=>mc.jaw=1-k);}
+    case'door':{const a=doorV;return tween(1,k=>doorV=a+(o.v-a)*k);}
+    case'tool':{if(o.t===mc.tool&&Math.abs(mc.phi-o.t/8*Math.PI*2)<1e-3)return;
+      const from=mc.phi;let to=o.t/8*Math.PI*2;let dd=((to-from)%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI;
+      clunk();await tween(.25,k=>mc.unclamp=k);await tween(.55+Math.abs(dd)*.15,k=>mc.phi=from+dd*k);mc.tool=o.t;clunk();return tween(.2,k=>mc.unclamp=1-k);}
+    case'spindle':mc.rpmT=o.rpm;return until(()=>Math.abs(mc.rpm-mc.rpmT*override)<40||mc.rpmT===0&&mc.rpm<40);
+    case'coolant':mc.coolant=o.v;return;
+    case'tail':{const a=tailV;return tween(1.1,k=>tailV=a+(o.v-a)*k);}
+    case'partoff':makePart();return sleep(.4);
+    case'eject':{const p=parts[parts.length-1];if(!p)return;await until(()=>p.state==='rest');p.state='eject';
+      const slot=trayCount++%8;const tx=420+(Math.floor(slot/4))*100,tz=210+(slot%4)*30;const s0=p.h.position.clone(),s1=new THREE.Vector3(tx,-144+p.maxR,tz);
+      const c=new THREE.Vector3((s0.x+s1.x)/2,170,(s0.z+s1.z)/2+60);const r0=p.h.rotation.x;
+      if(parts.filter(q=>q.state==='tray').length>=8){const old=parts.find(q=>q.state==='tray');scene.remove(old.h);parts.splice(parts.indexOf(old),1);}
+      await tween(1.3,k=>{const a=(1-k)*(1-k),b=2*(1-k)*k,cc=k*k;p.h.position.set(a*s0.x+b*c.x+cc*s1.x,a*s0.y+b*c.y+cc*s1.y,a*s0.z+b*c.z+cc*s1.z);p.h.rotation.x=r0+k*Math.PI*2;p.h.rotation.y=Math.sin(k*Math.PI)*.6;});
+      p.state='tray';return;}
+    case'end':return;
+  }
+}
+async function cycle(){
+  const my=++runId;running=true;hold=false;cycleStart=simTime;clearDone();
+  if(nextProg){setProgram(nextProg);nextProg=null;}
+  for(let k=0;k<prog.ins.length;k++){if(my!==runId)return;setLine(prog.ins[k].line);await exec(prog.ins[k]);}
+  if(my!==runId)return;
+  partsMade++;lastCycle=(simTime-cycleStart);running=false;setLine(-1);
+  if($('#auto').checked)setTimeout(()=>{if(my===runId&&!running)cycle();},900);
+}
+function reset(){
+  runId++;waiters.length=0;running=false;hold=false;mc.moving=false;mc.rpmT=0;mc.coolant=false;
+  if(nextProg){setProgram(nextProg);nextProg=null;}setLine(-1);clearDone();
+}
+
+/* ---------- Gコード表示 ---------- */
+const gEl=$('#gcode');let lineEls=[];
+function renderProgram(){
+  gEl.innerHTML='';const frag=document.createDocumentFragment();
+  lineEls=prog.lines.map(l=>{const d=document.createElement('div');d.className='gl';const n=document.createElement('span');n.className='n';n.textContent=l.n;const t=document.createElement('span');
+    const ci=l.t.indexOf('(');if(ci>=0){t.textContent=l.t.slice(0,ci);const c=document.createElement('span');c.className='c';c.textContent=l.t.slice(ci);t.appendChild(c);}else t.textContent=l.t;
+    d.append(n,t);frag.appendChild(d);return d;});
+  gEl.appendChild(frag);$('#pcode').textContent=prog.P.code;$('#pnote').textContent=prog.lines.length+' 行';
+}
+function setLine(i){if(curLine>=0&&lineEls[curLine]){lineEls[curLine].classList.remove('cur');lineEls[curLine].classList.add('done');}curLine=i;
+  if(i>=0&&lineEls[i]){const el=lineEls[i];el.classList.add('cur');const target=el.offsetTop-gEl.clientHeight*.4;gEl.scrollTop+=(target-gEl.scrollTop);}}
+function clearDone(){lineEls.forEach(e=>e.classList.remove('done','cur'));}
+function setProgram(P){prog=buildProgram(P);renderProgram();updateProgButtons();wpDirty=true;}
+
+/* プログラム選択ボタン（輪郭サムネイル付き） */
+const progsEl=$('#progs');
+PROGRAMS.forEach(P=>{const b=document.createElement('button');b.type='button';b.dataset.id=P.id;b.setAttribute('aria-pressed','false');
+  const c=document.createElement('canvas');c.width=180;c.height=50;const x=c.getContext('2d');const m=MATS[P.mat];
+  x.fillStyle=`rgb(${m.cut.map(v=>v*255|0).join(',')})`;x.beginPath();const sx=z=>8+(z-ZP)/(LE-ZP)*164,sy=r=>25-r*1.15;
+  x.moveTo(sx(ZP),25);for(let z=ZP;z<=LE;z+=.5)x.lineTo(sx(z),sy(Math.min(R0,P.f(z))));for(let z=LE;z>=ZP;z-=.5)x.lineTo(sx(z),50-sy(Math.min(R0,P.f(z))));x.closePath();x.fill();
+  const s=document.createElement('span');s.textContent=P.name;const sm=document.createElement('small');sm.textContent=P.code+' · '+m.label;
+  b.append(c,s,sm);b.addEventListener('click',()=>{if(running){nextProg=P;updateProgButtons();}else{setProgram(P);resetStock();}});progsEl.appendChild(b);});
+function updateProgButtons(){progsEl.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===(nextProg||prog.P).id)));
+  $('#pnote').textContent=nextProg?'次サイクルで '+nextProg.code:prog.lines.length+' 行';}
+function resetStock(){for(let i=0;i<N;i++)prof[i]=i*DZ>ZP-1.5?0:R0;heat.fill(0);wpDirty=true;}
+
+/* ---------- UI ---------- */
+$('#bStart').onclick=()=>{ensureAudio();if(hold){hold=false;return;}if(!running)cycle();};
+$('#bHold').onclick=()=>{if(running)hold=!hold;};
+$('#bReset').onclick=()=>reset();
+document.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>{speedMul=+b.dataset.spd;document.querySelectorAll('[data-spd]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));});
+$('#ovr').oninput=e=>{override=e.target.value/100;$('#ovrO').textContent=e.target.value+'%';};
+function toggle(id,fn){const b=$(id);b.onclick=()=>{const v=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',String(v));fn(v);};}
+toggle('#tSection',v=>{wpMat.clippingPlanes=v?[clipPlane]:[];chuckBody.material=chuckBody.material;wpMat.needsUpdate=true;});
+let explodeT=0;toggle('#tExplode',v=>explodeT=v?1:0);
+toggle('#tCoolant',v=>coolantEnabled=v);
+let soundOn=false;toggle('#tSound',v=>{soundOn=v;ensureAudio();});
+
+/* カメラ */
+let camMode='overview',camTween=null;
+const CAMS={overview:[[420,330,820],[80,-30,0]],turret:[[420,170,-420],[60,-10,-120]],chuck:[[170,70,210],[-20,0,0]],cinema:[[480,360,900],[80,-30,0]]};
+function setCam(m){camMode=m;document.querySelectorAll('[data-cam]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.cam===m)));
+  controls.autoRotate=m==='cinema';controls.autoRotateSpeed=1.2;
+  if(CAMS[m])camTween={p0:camera.position.clone(),t0:controls.target.clone(),p1:new THREE.Vector3(...CAMS[m][0]),t1:new THREE.Vector3(...CAMS[m][1]),k:0};else camTween=null;}
+document.querySelectorAll('[data-cam]').forEach(b=>b.onclick=()=>setCam(b.dataset.cam));
+controls.addEventListener('start',()=>{camTween=null;if(camMode==='tool'||camMode==='overview'||camMode==='turret'||camMode==='chuck'){camMode='free';document.querySelectorAll('[data-cam]').forEach(b=>b.setAttribute('aria-pressed','false'));}});
+
+/* ホバー解説 */
+const ray=new THREE.Raycaster(),mouse=new THREE.Vector2(),tip=$('#tip');let lastRay=0;
+renderer.domElement.addEventListener('pointermove',e=>{const now=performance.now();if(now-lastRay<70)return;lastRay=now;
+  const r=renderer.domElement.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(mouse,camera);
+  const hits=ray.intersectObjects(labelRoots,true);let info=null;
+  for(const h of hits){let o=h.object;while(o&&!o.userData.label)o=o.parent;if(o){info=o.userData.label;break;}}
+  if(info){tip.hidden=false;tip.innerHTML='';const s=document.createElement('strong');s.textContent=info.name;tip.append(s,document.createTextNode(info.desc));
+    let x=e.clientX-r.left,y=e.clientY-r.top;if(x>r.width-260)x-=270;if(y>r.height-110)y-=110;tip.style.left=x+'px';tip.style.top=y+'px';renderer.domElement.style.cursor='help';}
+  else{tip.hidden=true;renderer.domElement.style.cursor='';}});
+renderer.domElement.addEventListener('pointerleave',()=>tip.hidden=true);
+
+/* サウンド */
+let audio=null;
+function ensureAudio(){if(!soundOn||audio)return;try{const AC=window.AudioContext||window.webkitAudioContext;const ctx=new AC();const master=ctx.createGain();master.gain.value=.5;master.connect(ctx.destination);
+  const og=ctx.createGain();og.gain.value=0;const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;lp.connect(og);og.connect(master);
+  const o1=ctx.createOscillator();o1.type='sawtooth';o1.connect(lp);o1.start();const o2=ctx.createOscillator();o2.type='triangle';const g2=ctx.createGain();g2.gain.value=.25;o2.connect(g2);g2.connect(og);o2.start();
+  const buf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const ns=ctx.createBufferSource();ns.buffer=buf;ns.loop=true;const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=2600;bp.Q.value=1.4;const ng=ctx.createGain();ng.gain.value=0;ns.connect(bp);bp.connect(ng);ng.connect(master);ns.start();
+  audio={ctx,master,og,o1,o2,ng};}catch(e){audio=null;}}
+function clunk(){if(!audio||!soundOn)return;const c=audio.ctx,o=c.createOscillator(),g=c.createGain();o.type='square';o.frequency.value=70;g.gain.setValueAtTime(.25,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.18);o.connect(g);g.connect(audio.master);o.start();o.stop(c.currentTime+.2);}
+
+/* スパークライン */
+const spark2=$('#spark'),sx=spark2.getContext('2d');const loadHist=new Array(240).fill(0);let histT=0;
+function drawSpark(){const w=spark2.width,h=spark2.height;sx.clearRect(0,0,w,h);sx.strokeStyle='#26313b';sx.lineWidth=1;
+  [.25,.5,.75].forEach(f=>{sx.beginPath();sx.moveTo(0,h*f);sx.lineTo(w,h*f);sx.stroke();});
+  const gr=sx.createLinearGradient(0,0,0,h);gr.addColorStop(0,'rgba(240,180,0,.45)');gr.addColorStop(1,'rgba(240,180,0,0)');
+  sx.beginPath();sx.moveTo(0,h);loadHist.forEach((v,i)=>sx.lineTo(i/(loadHist.length-1)*w,h-v/100*(h-6)-2));sx.lineTo(w,h);sx.closePath();sx.fillStyle=gr;sx.fill();
+  sx.beginPath();loadHist.forEach((v,i)=>{const X=i/(loadHist.length-1)*w,Y=h-v/100*(h-6)-2;i?sx.lineTo(X,Y):sx.moveTo(X,Y);});sx.strokeStyle='#f0b400';sx.lineWidth=2;sx.stroke();
+  const lv=loadHist[loadHist.length-1];sx.fillStyle='#fff';sx.beginPath();sx.arc(w-3,h-lv/100*(h-6)-2,4,0,7);sx.fill();}
+
+/* 操作盤画面 */
+function drawOp(){const x=opX;x.fillStyle='#071510';x.fillRect(0,0,256,150);x.fillStyle='#38e08a';x.font='600 17px "JetBrains Mono",monospace';
+  x.fillText(prog.P.code+'  '+TOOLS[mc.tool].code,12,26);x.fillText('X '+(mc.r*2).toFixed(3).padStart(9),12,54);x.fillText('Z '+mc.z.toFixed(3).padStart(9),12,78);
+  x.fillText('S '+String(Math.round(mc.rpm)).padStart(5)+' rpm',12,102);x.fillStyle=hold?'#ffc400':running?'#38e08a':'#ff6a5a';x.fillText(hold?'FEED HOLD':running?'AUTO RUN':'RESET',12,132);
+  x.fillStyle='#173a28';x.fillRect(150,118,96,14);x.fillStyle='#38e08a';x.fillRect(150,118,96*Math.min(1,load/100),14);opTex.needsUpdate=true;}
+
+/* ---------- リサイズ ---------- */
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+new ResizeObserver(resize).observe(stage);resize();
+
+/* ---------- メインループ ---------- */
+const clock=new THREE.Clock();let frame=0;const tipW=new THREE.Vector3(),tmpV=new THREE.Vector3(),tmpV2=new THREE.Vector3();
+function loop(){
+  requestAnimationFrame(loop);
+  const dt=Math.min(.05,clock.getDelta());frame++;
+  const active=running&&!hold;const sdt=active?dt*speedMul:0;const pdt=hold?0:dt*speedMul;
+  if(active)simTime+=sdt;
+  // 主軸
+  const target=mc.rpmT*override;if(!hold||true){const acc=3200*(hold?0:dt*speedMul)+(running?0:2000*dt);mc.rpm+=Math.max(-acc,Math.min(acc,target-mc.rpm));}
+  if(!running){mc.rpmT=0;mc.coolant=false;}
+  spindle.rotation.x+=mc.rpm/60*Math.PI*2*.12*(hold?0:dt*Math.min(speedMul,2));
+  cutThisFrame=0;updateMotion(sdt);
+  // 待機ハンドラ
+  for(let i=0;i<waiters.length;i++){if(waiters[i].fn()){const w=waiters.splice(i,1)[0];i--;w.res();}}
+  // 停止中は原点へ戻す
+  if(!running){mc.z+=(HOME.z-mc.z)*Math.min(1,dt*3);mc.r+=(HOME.r-mc.r)*Math.min(1,dt*3);tailV+=(0-tailV)*Math.min(1,dt*3);mc.jaw+=(0-mc.jaw)*Math.min(1,dt*4);mc.unclamp*=.9;}
+  // 負荷
+  if(sdt>0){const inst=cutThisFrame/sdt/90;load+=(Math.min(100,inst)-load)*Math.min(1,sdt*6);}else if(!hold)load*=.9;
+  const m=MATS[prog.P.mat];chipMass+=cutThisFrame*m.dens/1000;
+  // 熱の減衰
+  if(pdt>0){const dk=Math.exp(-pdt*.5);let any=false;for(let i=0;i<N;i++){if(heat[i]>.002){heat[i]*=dk;any=true;}else heat[i]=0;}if(any)wpDirty=true;}
+  // 分解ビュー
+  explodeV+=(explodeT-explodeV)*Math.min(1,dt*3);
+  explodeParts.forEach(e=>e.o.position.copy(e.base).addScaledVector(e.off,explodeV));
+  const hx=head.position.x;
+  // 刃物台
+  turret.position.set(mc.z,0,-(mc.r+REACH)).addScaledVector(turretOff,explodeV);
+  turretBody.position.x=mc.unclamp*6;disk.rotation.x=mc.phi;
+  saddle.position.set(mc.z,0,0).addScaledVector(turretOff,explodeV).setZ(turretOff.z*explodeV);saddle.position.y=turretOff.y*explodeV;
+  wpHolder.position.x=80+mc.wpOff;
+  jaws.forEach(j=>j.position.y=R0+12+mc.jaw*7);
+  tailBody.position.x=430-90*Math.min(1,tailV*2);quill.position.x=-Math.max(0,tailV*2-1)*(430-90-155-LE);
+  doorInner.position.x=110+doorV*330;
+  // 粒子発生
+  const cx=hx+mc.z,cz=-mc.r;
+  if(cutThisFrame>0){let n=cutThisFrame*.012;while(n>0){if(Math.random()<n)emitChip(cx+(Math.random()-.5)*2,2,cz-1,m);n-=1;}
+    if(m.sparks&&load>35)for(let k=0;k<3;k++)emitPt(spark,cx,0,cz,(Math.random()-.5)*500,Math.random()*500,(Math.random()-.2)*500,.25+Math.random()*.2);}
+  if(mc.coolant&&coolantEnabled&&pdt>0){tmpV.set(turret.position.x+24,turret.position.y+60,turret.position.z+82);
+    tipW.set(turret.position.x,turret.position.y+4,turret.position.z+REACH);
+    for(let k=0;k<6;k++){tmpV2.subVectors(tipW,tmpV).normalize().multiplyScalar(700);emitPt(cool,tmpV.x,tmpV.y,tmpV.z,tmpV2.x+(Math.random()-.5)*60,tmpV2.y+(Math.random()-.5)*60+60,tmpV2.z+(Math.random()-.5)*60,1.2);}}
+  stepPts(cool,pdt,1400,-130);stepPts(spark,pdt,900,-130);
+  // 切りくず
+  for(let i=0;i<CH;i++){if(cS[i]!==1)continue;cA[i]+=pdt;cV[i*3+1]-=1400*pdt;for(let k=0;k<3;k++){cP[i*3+k]+=cV[i*3+k]*pdt;cR[i*3+k]+=cW[i*3+k]*pdt;}
+    const x=cP[i*3],y=cP[i*3+1],z=cP[i*3+2];const inTray=x>hx-40&&x<hx+240&&z>-75&&z<95;
+    const floorY=inTray?-130+Math.min(18,restCount*.03)+Math.random()*2:-257;
+    if(y<floorY){cP[i*3+1]=floorY;cS[i]=2;restCount++;}}
+  for(let i=0;i<CH;i++){if(cS[i]===0)continue;dummy.position.set(cP[i*3],cP[i*3+1],cP[i*3+2]);dummy.rotation.set(cR[i*3],cR[i*3+1],cR[i*3+2]);dummy.scale.setScalar(1);dummy.updateMatrix();chips.setMatrixAt(i,dummy.matrix);
+    const h=Math.max(0,1-cA[i]/1.2);const c=cCol[i];tmpC.setRGB(c[0]+(1-c[0])*h,c[1]+(.45-c[1])*h,c[2]+(.15-c[2])*h);chips.setColorAt(i,tmpC);}
+  chips.instanceMatrix.needsUpdate=true;if(chips.instanceColor)chips.instanceColor.needsUpdate=true;
+  // 完成品の落下
+  parts.forEach(p=>{if(p.state!=='fall')return;p.vy-=1400*pdt;p.h.position.y+=p.vy*pdt;p.h.position.x+=p.vx*pdt;p.h.rotation.x+=p.spin*pdt;p.spin*=Math.pow(.2,pdt);
+    const fy=-128+p.maxR;if(p.h.position.y<fy){p.h.position.y=fy;if(Math.abs(p.vy)>120){p.vy=-p.vy*.3;}else{p.vy=0;p.state='rest';}}});
+  if(wpDirty){updateWP();wpDirty=false;}
+  // シグナルタワー
+  const blinkOn=(performance.now()/350|0)%2===0;
+  lampMats[0].emissiveIntensity=!running?2.2:.08;lampMats[1].emissiveIntensity=hold?(blinkOn?2.4:.1):.08;lampMats[2].emissiveIntensity=running&&!hold?2.4:.08;
+  // カメラ
+  if(camTween){camTween.k=Math.min(1,camTween.k+dt*1.4);const k=ease(camTween.k);camera.position.lerpVectors(camTween.p0,camTween.p1,k);controls.target.lerpVectors(camTween.t0,camTween.t1,k);if(camTween.k>=1)camTween=null;}
+  if(camMode==='tool'){tmpV.set(hx+mc.z,0,-mc.r);controls.target.lerp(tmpV,Math.min(1,dt*4));tmpV2.copy(tmpV).add(new THREE.Vector3(70,95,120));camera.position.lerp(tmpV2,Math.min(1,dt*2));}
+  controls.update();
+  // 表示
+  if(frame%3===0){$('#dX').textContent=(mc.r*2).toFixed(3);$('#dZ').textContent=mc.z.toFixed(3);$('#dS').textContent=Math.round(mc.rpm);$('#dF').textContent=mc.moving&&!mc.rapid?mc.F.toFixed(2):(mc.moving?'RAPID':'0.00');$('#dT').textContent=TOOLS[mc.tool].code;
+    const st=$('#status'),s=hold?'hold':running?'run':'idle';st.dataset.s=s;$('#statusTxt').textContent=hold?'FEED HOLD':running?'AUTO RUN':'IDLE';
+    $('#sParts').innerHTML=partsMade+'<small>個</small>';$('#sCycle').innerHTML=(running?simTime-cycleStart:lastCycle||0).toFixed(1)+'<small>秒</small>';
+    $('#sLast').innerHTML=lastCycle?lastCycle.toFixed(1)+'<small>秒</small>':'—';$('#sChip').innerHTML=chipMass.toFixed(0)+'<small>g</small>';$('#sLoad').textContent=Math.round(load)+'%';
+    $('#bHold').textContent=hold?'再開':'フィードホールド';}
+  histT+=dt;if(histT>.1){histT=0;loadHist.shift();loadHist.push(load);drawSpark();}
+  if(frame%12===0)drawOp();
+  if(audio&&soundOn){const t=audio.ctx.currentTime;audio.og.gain.setTargetAtTime(mc.rpm>30?.18:0,t,.1);audio.o1.frequency.setTargetAtTime(25+mc.rpm/60,t,.1);audio.o2.frequency.setTargetAtTime(80+mc.rpm/60*6,t,.1);audio.ng.gain.setTargetAtTime(load/100*.35,t,.05);}
+  else if(audio){audio.og.gain.value=0;audio.ng.gain.value=0;}
+  renderer.render(scene,camera);
+}
+renderProgram();updateProgButtons();resetStock();updateWP();
+if(!reduceMotion)setTimeout(()=>setCam('overview'),0);
+loop();
+setTimeout(()=>cycle(),500);
+})();
+</script>
